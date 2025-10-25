@@ -1,23 +1,49 @@
 ﻿# --- FastAPI + Helius Backend for Solana Risk Checker ---
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 import os
 import time
 import httpx
 from solana.rpc.async_api import AsyncClient
 import base64
+import json
 
-app = FastAPI()
+app = FastAPI(title="Solana Risk Checker", version="0.2.0")
 
 # -------------------------
 # Environment & Config
 # -------------------------
+FE_ORIGIN = os.getenv("FE_ORIGIN", "http://localhost:5173")
+
+SOLANA_NETWORK = os.getenv("SOLANA_NETWORK", "devnet").lower() # devnet 
+
 HELIUS_API_KEY = os.getenv("HELIUS_API_KEY")  # Set this in Railway or .env
-HELIUS_BASE_URL = "https://api-devnet.helius.xyz/v0"  # Helius REST API (devnet)
-HELIUS_RPC = f"https://devnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"  # Helius RPC for simulation
+HELIUS_BASE_URL = os.getenv(
+    "HELIUS_BASE_URL",
+    "https://api-devnet.helius.xyz/v0" if SOLANA_NETWORK == "devnet" else "https://api.helius.xyz/v0",
+)
+HELIUS_RPC = os.getenv(
+    "HELIUS_RPC",
+    f"https://{SOLANA_NETWORK}.helius-rpc.com/?api-key={HELIUS_API_KEY}",
+)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")  # optional
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FE_ORIGIN],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 # In-memory cache to avoid hitting Helius too often
-CACHE = {}
-CACHE_TTL = 300  # seconds (5 min)
+CACHE: Dict[str, Dict[str, Any]] = {}
+CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))  # seconds (default 5 min)
+
+# HTTP client settings
+HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "20"))  # seconds
 
 # -------------------------
 # Health Check Endpoint
